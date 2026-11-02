@@ -1,39 +1,4 @@
-import { authenticate, error, hash, saveSession, SESSION_SECONDS, store, token, validOrigin, type Session } from "../../../lib/connector";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-export async function POST(request: Request) {
-  if (!validOrigin(request)) return error("Invalid request origin.", 403);
-  try {
-    const body = await request.json() as { action?: string; name?: string };
-    if (body.action === "create") {
-      const host = token(), join = token(), now = Date.now();
-      const session: Session = { id: crypto.randomUUID(), hostHash: await hash(host), joinHash: await hash(join), expiresAt: now + SESSION_SECONDS * 1000, joinedAt: null, deviceName: null, revokedAt: null, files: [] };
-      await saveSession(session);
-      return Response.json({ host, join, expiresAt: session.expiresAt }, { headers: { "Cache-Control": "no-store" } });
-    }
-    const session = await authenticate(request);
-    if (!session) return error("This connection has expired or is unavailable.", 401);
-    if (body.action === "join" && session.role === "sender") {
-      session.joinedAt ??= Date.now();
-      session.deviceName ??= typeof body.name === "string" ? body.name.trim().slice(0, 50) || "Another device" : "Another device";
-      await saveSession(session);
-      return Response.json({ ok: true });
-    }
-    if (body.action === "disconnect" && session.role === "receiver") {
-      session.revokedAt = Date.now();
-      await store().set(`connector:session:${session.id}`, session, { ex: SESSION_SECONDS });
-      return Response.json({ ok: true });
-    }
-    return error("Unknown action.");
-  } catch (cause) { console.error("connection error", cause); return error("Connection service is temporarily unavailable.", 503); }
-}
-
-export async function GET(request: Request) {
-  try {
-    const session = await authenticate(request);
-    if (!session) return error("This connection has expired or is unavailable.", 401);
-    return Response.json({ role: session.role, connected: !!session.joinedAt, deviceName: session.deviceName, expiresAt: session.expiresAt, files: session.files.map(({ objectKey, ...file }) => file) }, { headers: { "Cache-Control": "no-store" } });
-  } catch { return error("Connection service is temporarily unavailable.", 503); }
-}
+import { authenticate, db, error, hash, SESSION_SECONDS, token, validOrigin } from "../../../lib/connector";
+export const runtime="nodejs",dynamic="force-dynamic";
+export async function POST(request:Request){if(!validOrigin(request))return error("Invalid request origin.",403);try{const body=await request.json() as {action?:string;name?:string};const sessions=(await db()).collection("sessions");if(body.action==="create"){const host=token(),join=token(),now=Date.now(),id=crypto.randomUUID();await sessions.insertOne({id,hostHash:await hash(host),joinHash:await hash(join),expiresAt:now+SESSION_SECONDS*1000});return Response.json({host,join,expiresAt:now+SESSION_SECONDS*1000})}const session=await authenticate(request);if(!session)return error("This connection has expired or is unavailable.",401);if(body.action==="join"&&session.role==="sender"){await sessions.updateOne({id:session.id},{$set:{joinedAt:session.joinedAt||Date.now(),deviceName:session.deviceName||body.name?.slice(0,50)||"Another device"}});return Response.json({ok:true})}if(body.action==="disconnect"&&session.role==="receiver"){await sessions.updateOne({id:session.id},{$set:{revokedAt:Date.now()}});return Response.json({ok:true})}return error("Unknown action.")}catch(e){console.error(e);return error("Connection service is temporarily unavailable.",503)}}
+export async function GET(request:Request){try{const session=await authenticate(request);if(!session)return error("This connection has expired or is unavailable.",401);const files=await(await db()).collection("files").find({sessionId:session.id}).sort({createdAt:-1}).limit(100).toArray();return Response.json({role:session.role,connected:!!session.joinedAt,deviceName:session.deviceName||null,expiresAt:session.expiresAt,files:files.map(f=>({id:f.id,name:f.name,size:f.size,mime:f.mime,sender:f.sender,created_at:f.createdAt}))})}catch{return error("Connection service is temporarily unavailable.",503)}}
