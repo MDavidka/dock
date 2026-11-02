@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import QRCode from "qrcode";
 
-type Session = { host: string; join: string };
+type Session = { host: string; join: string; qr: string };
 type Connection = { connected: boolean };
 
 export default function Home() {
@@ -16,10 +15,7 @@ export default function Home() {
     if (!response.ok) throw new Error("Unable to create connection.");
     const next = await response.json() as Session;
     setSession(next);
-    const link = new URL(window.location.href);
-    link.search = "";
-    link.searchParams.set("join", next.join);
-    setCode(await QRCode.toDataURL(link.toString(), { width: 800, margin: 0, color: { dark: "#111111", light: "#ffffff" }, errorCorrectionLevel: "M" }));
+    setCode(next.qr);
   }, []);
 
   useEffect(() => { void createSession().catch(() => setSession(null)); }, [createSession]);
