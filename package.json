@@ -5,6 +5,11 @@
   "engines": {
     "node": ">=22.13.0"
   },
+  "browserslist": [
+    "Chrome >= 64",
+    "ChromeAndroid >= 64",
+    "Android >= 7"
+  ],
   "scripts": {
     "install:ci": "node scripts/install-ci.mjs",
     "dev": "next dev",
